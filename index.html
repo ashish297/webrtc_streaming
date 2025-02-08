@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Webcam Streaming via WebSocket</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Webcam Streaming to RTMP (through Node)</h1>
+    <p>
+      This page captures your webcam and microphone, sending the video/audio
+      to a Node.js server via WebSocket. The server then pipes it to FFmpeg
+      and publishes it over RTMP. Click <strong>Start Streaming</strong> to begin,
+      and <strong>Stop Streaming</strong> when finished.
+    </p>
+
+    <button id="startBtn" class="btn-start">Start Streaming</button>
+    <button id="stopBtn" class="btn-stop" disabled>Stop Streaming</button>
+  </div>
+
+  <script>
+    let mediaRecorder;
+    let socket;
+    let stream;
+
+    document.getElementById('startBtn').addEventListener('click', async () => {
+      try {
+        // Check if the browser supports getUserMedia
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert('getUserMedia is not supported in your browser.');
+          return;
+        }
+
+        // Ensure no existing stream is active
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+
+        // Define media constraints
+        const constraints = {
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 }
+          },
+          audio: true
+        };
+
+        // Request access to camera and microphone
+        console.log("Requesting camera and microphone access...");
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        console.log("✅ Camera & microphone access granted.");
+
+        // Display the video stream in a video element (optional)
+        const videoElement = document.createElement('video');
+        videoElement.srcObject = stream;
+        videoElement.autoplay = true;
+        videoElement.muted = true;
+        document.body.appendChild(videoElement);
+
+        // Open a WebSocket connection to your Node server
+        console.log("Connecting to WebSocket...");
+        socket = new WebSocket('wss://43.204.103.160/ws/');
+
+        socket.onopen = () => {
+          console.log('✅ WebSocket connection established.');
+          document.getElementById('stopBtn').disabled = false;
+
+          // Create a MediaRecorder that outputs 'video/webm' chunks
+          mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp8' });
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+              console.log(`📡 Sending video chunk: ${event.data.size} bytes`);
+              socket.send(event.data);
+            }
+          };
+
+          mediaRecorder.onerror = (event) => {
+            console.error("❌ MediaRecorder error:", event.error);
+            alert("MediaRecorder error: " + event.error.message);
+          };
+
+          // Start recording, sending data every 100ms
+          mediaRecorder.start(100);
+          console.log('🎥 MediaRecorder started.');
+
+          // Disable start button to prevent multiple clicks
+          document.getElementById('startBtn').disabled = true;
+        };
+
+        socket.onclose = () => {
+          console.warn('⚠️ WebSocket connection closed.');
+          document.getElementById('stopBtn').disabled = true;
+        };
+
+        socket.onerror = (err) => {
+          console.error('❌ WebSocket error:', err);
+          alert('WebSocket error. Check server connection.');
+        };
+
+      } catch (err) {
+        console.error(`❌ Error accessing media devices: ${err.name} - ${err.message}`);
+        if (err.name === 'NotAllowedError') {
+          alert('Permissions have not been granted to use your camera and microphone. Please check your settings.');
+        } else if (err.name === 'NotFoundError') {
+          alert('No media devices found. Please connect a camera and/or microphone.');
+        } else if (err.name === 'NotReadableError') {
+          alert('Media device is already in use by another application.');
+        } else if (err.name === 'OverconstrainedError') {
+          alert('The specified constraints cannot be met by your device.');
+        } else {
+          alert(`Error accessing media devices: ${err.message}`);
+        }
+      }
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', () => {
+      console.log("🛑 Stopping streaming...");
+
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        console.log('⏹️ MediaRecorder stopped.');
+      }
+
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close();
+        console.log('🔌 WebSocket closed.');
+      }
+
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        console.log("🎤🎥 Camera & microphone turned off.");
+      }
+
+      // Remove the video element if it exists
+      const videoElement = document.querySelector('video');
+      if (videoElement) {
+        videoElement.srcObject = null;
+        document.body.removeChild(videoElement);
+      }
+
+      // Reset buttons
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+    });
+  </script>
+</body>
+</html>
