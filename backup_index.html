@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Webcam Video Streaming via WebSocket</title>
+  <title>Webcam Streaming via WebSocket</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
-    <h1>Webcam Video Streaming to RTMP (through Node)</h1>
+    <h1>Webcam Streaming to RTMP (through Node)</h1>
     <p>
-      This page captures your webcam video (without audio) and sends it to a Node.js server via WebSocket.
-      The server then pipes it to FFmpeg and publishes it over RTMP.
-      Click <strong>Start Streaming</strong> to begin, and <strong>Stop Streaming</strong> when finished.
+      This page captures your webcam and microphone, sending the video/audio
+      to a Node.js server via WebSocket. The server then pipes it to FFmpeg
+      and publishes it over RTMP. Click <strong>Start Streaming</strong> to begin,
+      and <strong>Stop Streaming</strong> when finished.
     </p>
 
     <button id="startBtn" class="btn-start">Start Streaming</button>
@@ -37,20 +38,20 @@
           stream.getTracks().forEach(track => track.stop());
         }
 
-        // Define media constraints: video enabled, audio disabled
+        // Define media constraints
         const constraints = {
           video: {
             width: { ideal: 1280 },
             height: { ideal: 720 },
             frameRate: { ideal: 30 }
           },
-          audio: false
+          audio: true
         };
 
-        // Request access to camera (video only)
-        console.log("Requesting camera access...");
+        // Request access to camera and microphone
+        console.log("Requesting camera and microphone access...");
         stream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log("✅ Camera access granted.");
+        console.log("✅ Camera & microphone access granted.");
 
         // Display the video stream in a video element (optional)
         const videoElement = document.createElement('video');
@@ -61,13 +62,13 @@
 
         // Open a WebSocket connection to your Node server
         console.log("Connecting to WebSocket...");
-        socket = new WebSocket('wss://serverklearvision.work.gd/');
+        socket = new WebSocket('wss://server.proficientvisionsolutions.com/ws/');
 
         socket.onopen = () => {
           console.log('✅ WebSocket connection established.');
           document.getElementById('stopBtn').disabled = false;
 
-          // Create a MediaRecorder that outputs 'video/webm' chunks with video only
+          // Create a MediaRecorder that outputs 'video/webm' chunks
           mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp8' });
 
           mediaRecorder.ondataavailable = (event) => {
@@ -103,11 +104,11 @@
       } catch (err) {
         console.error(`❌ Error accessing media devices: ${err.name} - ${err.message}`);
         if (err.name === 'NotAllowedError') {
-          alert('Permissions have not been granted to use your camera. Please check your settings.');
+          alert('Permissions have not been granted to use your camera and microphone. Please check your settings.');
         } else if (err.name === 'NotFoundError') {
-          alert('No camera found. Please connect a camera.');
+          alert('No media devices found. Please connect a camera and/or microphone.');
         } else if (err.name === 'NotReadableError') {
-          alert('Camera is already in use by another application.');
+          alert('Media device is already in use by another application.');
         } else if (err.name === 'OverconstrainedError') {
           alert('The specified constraints cannot be met by your device.');
         } else {
@@ -131,7 +132,7 @@
 
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
-        console.log("🎥 Camera turned off.");
+        console.log("🎤🎥 Camera & microphone turned off.");
       }
 
       // Remove the video element if it exists

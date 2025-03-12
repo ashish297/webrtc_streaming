@@ -10,24 +10,20 @@ wsServer.on('connection', (socket) => {
   console.log('🔗 WebSocket client connected.');
 
   // Spawn the FFmpeg process
-const ffmpeg = spawn('ffmpeg', [
-    '-rtbufsize', '4M',             // Moderate buffer size (4MB) for stability
-    '-i', 'pipe:0',                 // Input from standard input (stdin)
-
-    '-c:v', 'libx264',              // H.264 video codec
-    '-preset', 'veryfast',          // Balance between quality and encoding speed
-    '-tune', 'film',                // Optimized for better quality at standard latency
-    '-crf', '20',                   // Constant Rate Factor for good quality
-    '-g', '60',                     // GOP (Group of Pictures) set to 60 for keyframes every 2 sec
-    '-keyint_min', '30',            // Minimum keyframe interval (1 sec)
-
-    '-c:a', 'aac',                  // AAC audio codec
-    '-b:a', '160k',                 // Higher audio bitrate for better quality
-    '-ar', '44100',                 // Audio sample rate for compatibility
-    
-    '-f', 'flv',                    // RTMP requires FLV format
-    'rtmp://43.204.103.160/live/stream' // RTMP streaming server URL
-]);
+  const ffmpeg = spawn('ffmpeg', [
+    '-protocol_whitelist', 'file,udp,rtp,crypto',
+    '-i', 'webcam.sdp',
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-b:v', '2500k',
+    '-maxrate', '2500k',
+    '-bufsize', '5000k',
+    '-g', '50',
+    '-an',
+    '-f', 'flv',
+    '-flvflags', 'no_duration_filesize', // Ignore FLV duration requirements
+    'rtmp://13.201.146.30/fog/1234'
+  ]);
 
   // Handle incoming messages from WebSocket and write to FFmpeg's stdin
   socket.on('message', (data) => {

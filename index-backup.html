@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebRTC Streaming</title>
+    <style>
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .video-container { margin: 20px 0; }
+        video { width: 100%; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div>
+            <button id="webcamBtn">Stream Webcam</button>
+            <button id="fileBtn">Stream Video File</button>
+            <button id="stopBtn" class="hidden">Stop Streaming</button>
+        </div>
+
+        <div class="video-container">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <input type="file" id="fileInput" accept="video/*" class="hidden">
+        </div>
+    </div>
+
+    <script>
+        let peerConnection;
+        let localStream;
+        let websocket;
+        let isStreaming = false;
+
+        const config = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        };
+
+        const websocketUrl = 'ws://65.1.34.136:8001';
+
+        async function initWebRTC() {
+            peerConnection = new RTCPeerConnection(config);
+            
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    sendToServer({
+                        type: 'candidate',
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            peerConnection.oniceconnectionstatechange = () => {
+                console.log("ICE Connection State:", peerConnection.iceConnectionState);
+            };
+        }
+
+        function connectWebSocket() {
+            websocket = new WebSocket(websocketUrl);
+            
+            websocket.onopen = async () => {
+                console.log('WebSocket Connected');
+                await createAndSendOffer();
+            };
+
+            websocket.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+                handleSignalingMessage(message);
+            };
+
+            websocket.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+            };
+        }
+
+        async function createAndSendOffer() {
+            try {
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveVideo: false,
+                    offerToReceiveAudio: false
+                });
+                await peerConnection.setLocalDescription(offer);
+                
+                sendToServer({
+                    type: 'offer',
+                    sdp: offer.sdp
+                });
+            } catch (error) {
+                console.error('Error creating offer:', error);
+            }
+        }
+
+        async function handleSignalingMessage(message) {
+            try {
+                if (message.type === 'answer') {
+                    await peerConnection.setRemoteDescription(
+                        new RTCSessionDescription(message)
+                    );
+                } else if (message.type === 'candidate') {
+                    await peerConnection.addIceCandidate(
+                        new RTCIceCandidate(message.candidate)
+                    );
+                }
+            } catch (error) {
+                console.error('Signaling error:', error);
+            }
+        }
+
+        function sendToServer(message) {
+            if (websocket.readyState === WebSocket.OPEN) {
+                websocket.send(JSON.stringify(message));
+            }
+        }
+
+        async function startWebcamStream() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: false
+                });
+
+                document.getElementById('localVideo').srcObject = localStream;
+                await startStreaming(localStream);
+            } catch (error) {
+                console.error('Error accessing webcam:', error);
+            }
+        }
+
+        async function startFileStream(file) {
+            const video = document.getElementById('localVideo');
+            video.src = URL.createObjectURL(file);
+            
+            video.onloadedmetadata = async () => {
+                video.play();
+                localStream = video.captureStream(30);
+                await startStreaming(localStream);
+            };
+        }
+
+        async function startStreaming(stream) {
+            await initWebRTC();
+            
+            stream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, stream);
+            });
+
+            connectWebSocket();
+            isStreaming = true;
+            
+            document.getElementById('stopBtn').classList.remove('hidden');
+            document.getElementById('webcamBtn').classList.add('hidden');
+            document.getElementById('fileBtn').classList.add('hidden');
+        }
+
+        function stopStreaming() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (peerConnection) {
+                peerConnection.close();
+            }
+            if (websocket) {
+                websocket.close();
+            }
+
+            document.getElementById('localVideo').srcObject = null;
+            document.getElementById('stopBtn').classList.add('hidden');
+            document.getElementById('webcamBtn').classList.remove('hidden');
+            document.getElementById('fileBtn').classList.remove('hidden');
+            isStreaming = false;
+        }
+
+        // Event Listeners
+        document.getElementById('webcamBtn').onclick = startWebcamStream;
+        document.getElementById('fileBtn').onclick = () => {
+            document.getElementById('fileInput').click();
+        };
+        document.getElementById('stopBtn').onclick = stopStreaming;
+        document.getElementById('fileInput').onchange = (e) => {
+            if (e.target.files.length > 0) {
+                startFileStream(e.target.files[0]);
+            }
+        };
+    </script>
+</body>
+</html>
